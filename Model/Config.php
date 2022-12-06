@@ -4,49 +4,54 @@
  */
 namespace Cadence\PageBuilderDisable\Model;
 
-use Magento\Cms\Model\BlockRepository;
+use Magento\Cms\Api\BlockRepositoryInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Config\CacheInterface;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\UrlInterface;
+use Magento\PageBuilder\Model\Config\CompositeReader;
 
 class Config extends \Magento\PageBuilder\Model\Config
 {
-    const CONFIG_PATH_DISABLED_BLOCKS = 'page_builder_disable/default/excluded_blocks';
+    const CONFIG_PATH_DISABLED_BLOCKS = 'cms/page_builder_disable/excluded_blocks';
 
     /**
      * @var string
      */
-    protected $disableBlockRegex = '~cms/block/edit/block_id/{{id}}/~';
+    protected string $disableBlockRegex = '~cms/block/edit/block_id/{{id}}/~';
 
     /**
-     * @var \Magento\Cms\Api\BlockRepositoryInterface
+     * @var BlockRepositoryInterface
      */
-    protected $blockRepository;
+    protected BlockRepositoryInterface $blockRepository;
 
     /**
-     * @var \Magento\Framework\UrlInterface
+     * @var UrlInterface
      */
-    protected $urlInterface;
+    protected UrlInterface $urlInterface;
 
     /**
      * @var ScopeConfigInterface
      */
-    private $scopeConfig;
+    private ScopeConfigInterface $scopeConfig;
 
     /**
      * Config constructor.
-     * @param \Magento\Cms\Api\BlockRepositoryInterface $blockRepository
-     * @param \Magento\Framework\UrlInterface $urlInterface
-     * @param \Magento\PageBuilder\Model\Config\CompositeReader $reader
-     * @param \Magento\Framework\Config\CacheInterface $cache
+     * @param BlockRepositoryInterface $blockRepository
+     * @param UrlInterface $urlInterface
+     * @param CompositeReader $reader
+     * @param CacheInterface $cache
      * @param ScopeConfigInterface $scopeConfig
      * @param string $cacheId
      */
     public function __construct(
-        \Magento\Cms\Api\BlockRepositoryInterface $blockRepository,
-        \Magento\Framework\UrlInterface $urlInterface,
-        \Magento\PageBuilder\Model\Config\CompositeReader $reader,
-        \Magento\Framework\Config\CacheInterface $cache,
+        BlockRepositoryInterface $blockRepository,
+        UrlInterface $urlInterface,
+        CompositeReader $reader,
+        CacheInterface $cache,
         ScopeConfigInterface $scopeConfig,
-        $cacheId = 'pagebuilder_config'
+        string $cacheId = 'pagebuilder_config'
     ) {
         $this->blockRepository = $blockRepository;
         $this->urlInterface = $urlInterface;
@@ -58,11 +63,12 @@ class Config extends \Magento\PageBuilder\Model\Config
      * Returns config setting if page builder enabled
      *
      * @return bool
+     * @throws LocalizedException
      */
     public function isEnabled(): bool
     {
         if (parent::isEnabled()) {
-            $excludedBlocks = trim($this->scopeConfig->getValue(self::CONFIG_PATH_DISABLED_BLOCKS));
+            $excludedBlocks = trim((string)$this->scopeConfig->getValue(self::CONFIG_PATH_DISABLED_BLOCKS));
             if (strlen($excludedBlocks) && $this->_isDisabledUrlCandidate()) {
                 $excludedBlocks = explode(",", $excludedBlocks);
                 foreach($excludedBlocks as $excludedBlock) {
@@ -82,7 +88,7 @@ class Config extends \Magento\PageBuilder\Model\Config
      * Determine if we should examine the URL further for exclusion of page builder
      * @return bool
      */
-    protected function _isDisabledUrlCandidate()
+    protected function _isDisabledUrlCandidate(): bool
     {
         $disableCandidateRegex = str_replace('{{id}}/', '', $this->disableBlockRegex);
         return preg_match($disableCandidateRegex, $this->urlInterface->getCurrentUrl());
@@ -92,8 +98,9 @@ class Config extends \Magento\PageBuilder\Model\Config
      * Examine the URL to determine if pagebuilder is disabled
      * @param string $block
      * @return bool
+     * @throws LocalizedException
      */
-    protected function _isDisabledBlock(string $block)
+    protected function _isDisabledBlock(string $block): bool
     {
         try {
             $blockModel = $this->blockRepository->getById($block);
@@ -101,10 +108,9 @@ class Config extends \Magento\PageBuilder\Model\Config
             $urlPattern = str_replace("{{id}}", $blockModel->getId(), $this->disableBlockRegex);
             // If it matches, return false
             return preg_match($urlPattern, $this->urlInterface->getCurrentUrl());
-        } catch (\Magento\Framework\Exception\NoSuchEntityException $e) {
+        } catch (NoSuchEntityException $e) {
             // If that block id no longer exists, don't worry about it
             return false;
         }
-        return true;
     }
 }
