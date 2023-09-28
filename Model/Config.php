@@ -5,6 +5,7 @@
 namespace Cadence\PageBuilderDisable\Model;
 
 use Magento\Cms\Api\BlockRepositoryInterface;
+use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Config\CacheInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -25,6 +26,11 @@ class Config extends \Magento\PageBuilder\Model\Config
      * @var BlockRepositoryInterface
      */
     protected BlockRepositoryInterface $blockRepository;
+    
+    /**
+     * @var SearchCriteriaBuilder
+     */
+    protected SearchCriteriaBuilder $searchCriteriaBuilder;
 
     /**
      * @var UrlInterface
@@ -39,6 +45,7 @@ class Config extends \Magento\PageBuilder\Model\Config
     /**
      * Config constructor.
      * @param BlockRepositoryInterface $blockRepository
+     * @param SearchCriteriaBuilder $searchCriteriaBuilder
      * @param UrlInterface $urlInterface
      * @param CompositeReader $reader
      * @param CacheInterface $cache
@@ -47,6 +54,7 @@ class Config extends \Magento\PageBuilder\Model\Config
      */
     public function __construct(
         BlockRepositoryInterface $blockRepository,
+        SearchCriteriaBuilder $searchCriteriaBuilder,
         UrlInterface $urlInterface,
         CompositeReader $reader,
         CacheInterface $cache,
@@ -54,6 +62,7 @@ class Config extends \Magento\PageBuilder\Model\Config
         string $cacheId = 'pagebuilder_config'
     ) {
         $this->blockRepository = $blockRepository;
+        $this->searchCriteriaBuilder = $searchCriteriaBuilder;
         $this->urlInterface = $urlInterface;
         $this->scopeConfig = $scopeConfig;
         parent::__construct($reader, $cache, $scopeConfig, $cacheId);
@@ -69,7 +78,7 @@ class Config extends \Magento\PageBuilder\Model\Config
     {
         if (parent::isEnabled()) {
             $excludedBlocks = trim((string)$this->scopeConfig->getValue(self::CONFIG_PATH_DISABLED_BLOCKS));
-            if (strlen($excludedBlocks) && $this->_isDisabledUrlCandidate()) {
+            if (strlen($excludedBlocks) > 0 && $this->_isDisabledUrlCandidate()) {
                 $excludedBlocks = explode(",", $excludedBlocks);
                 foreach($excludedBlocks as $excludedBlock) {
                     if ($this->_isDisabledBlock($excludedBlock)) {
@@ -103,14 +112,20 @@ class Config extends \Magento\PageBuilder\Model\Config
     protected function _isDisabledBlock(string $block): bool
     {
         try {
-            $blockModel = $this->blockRepository->getById($block);
-            // Create the url pattern for this specific block based on the primary key id
-            $urlPattern = str_replace("{{id}}", $blockModel->getId(), $this->disableBlockRegex);
-            // If it matches, return false
-            return preg_match($urlPattern, $this->urlInterface->getCurrentUrl());
+            $searchCriteria = $this->searchCriteriaBuilder->addFilter('identifier', $block,'eq')->create();
+            $cmsBlocks = $this->blockRepository->getList($searchCriteria)->getItems();
+            foreach ($cmsBlocks as $blockModel) {
+                // Create the url pattern for this specific block based on the primary key id
+                $urlPattern = str_replace("{{id}}", $blockModel->getId(), $this->disableBlockRegex);
+                // If it matches, return false
+                if(preg_match($urlPattern, $this->urlInterface->getCurrentUrl())) {
+                    return true;
+                }
+            }
         } catch (NoSuchEntityException $e) {
             // If that block id no longer exists, don't worry about it
             return false;
         }
+        return false;
     }
 }
